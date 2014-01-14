@@ -24,10 +24,24 @@ describe( 'inspect', function()
       assert.equals(inspect("I have \"quotes\" and 'apostrophes'"), '"I have \\"quotes\\" and \'apostrophes\'"')
     end)
 
-    it('escapes escape control characters', function()
-       assert.equals(inspect('I have \n new \n lines'), '"I have \\\\n new \\\\n lines"')
-       assert.equals(inspect('I have \b a back space'), '"I have \\\\b a back space"')
+    it('escapes newlines properly', function()
+       assert.equals(inspect('I have \n new \n lines'), '"I have \\n new \\n lines"')
     end)
+
+    it('escapes tabs properly', function()
+       assert.equals(inspect('I have \t a tab character'), '"I have \\t a tab character"')
+    end)
+
+    it('escapes backspaces properly', function()
+       assert.equals(inspect('I have \b a back space'), '"I have \\b a back space"')
+    end)
+
+    it('backslashes its backslashes', function()
+       assert.equals(inspect('I have \\ a backslash'), '"I have \\\\ a backslash"')
+       assert.equals(inspect('I have \\\\ two backslashes'), '"I have \\\\\\\\ two backslashes"')
+       assert.equals(inspect('I have \\\n a backslash followed by a newline'), '"I have \\\\\\n a backslash followed by a newline"')
+    end)
+
   end)
 
   it('works with nil', function()
@@ -105,7 +119,16 @@ describe( 'inspect', function()
 }]])
     end)
 
-    describe('depth', function()
+    it('displays <table x> instead of repeating an already existing table', function()
+      local a = { 1, 2, 3 }
+      local b = { 'a', 'b', 'c', a }
+      a[4] = b
+      a[5] = a
+      a[6] = b
+      assert.equals(inspect(a), '<1>{ 1, 2, 3, <2>{ "a", "b", "c", <table 1> }, <table 1>, <table 2> }')
+    end)
+
+    describe('The depth parameter', function()
       local level5 = { 1,2,3, a = { b = { c = { d = { e = 5 } } } } }
       local keys = { [level5] = true }
 
@@ -123,16 +146,16 @@ describe( 'inspect', function()
 }]])
       end)
       it('is modifiable by the user', function()
-        assert.equals(inspect(level5, 2), [[{ 1, 2, 3,
+        assert.equals(inspect(level5, {depth = 2}), [[{ 1, 2, 3,
   a = {
     b = {...}
   }
 }]])
-        assert.equals(inspect(level5, 1), [[{ 1, 2, 3,
+        assert.equals(inspect(level5, {depth = 1}), [[{ 1, 2, 3,
   a = {...}
 }]])
-        assert.equals(inspect(level5, 0), "{...}")
-        assert.equals(inspect(level5, 4), [[{ 1, 2, 3,
+        assert.equals(inspect(level5, {depth = 0}), "{...}")
+        assert.equals(inspect(level5, {depth = 4}), [[{ 1, 2, 3,
   a = {
     b = {
       c = {
@@ -145,7 +168,7 @@ describe( 'inspect', function()
       end)
 
       it('respects depth on keys', function()
-        assert.equals(inspect(keys, 4), [[{
+        assert.equals(inspect(keys, {depth = 4}), [[{
   [{ 1, 2, 3,
     a = {
       b = {
@@ -155,14 +178,61 @@ describe( 'inspect', function()
   }] = true
 }]])
       end)
+    end)
 
-      it('displays <table x> instead of repeating an already existing table', function()
-        local a = { 1, 2, 3 }
-        local b = { 'a', 'b', 'c', a }
-        a[4] = b
-        a[5] = a
-        a[6] = b
-        assert.equals(inspect(a), '<1>{ 1, 2, 3, <2>{ "a", "b", "c", <table 1> }, <table 1>, <table 2> }')
+    describe('The filter option', function()
+
+      it('filters hash values', function()
+        local a = {'this is a'}
+        local b = {x = 1, a = a}
+
+        assert.equals(inspect(b, {filter = {a}}), [[{
+  a = <filtered>,
+  x = 1
+}]])
+      end)
+
+      it('filtereds hash keys', function()
+        local a = {'this is a'}
+        local b = {x = 1, [a] = 'a is used as a key here'}
+
+        assert.equals(inspect(b, {filter = {a}}), [[{
+  x = 1,
+  [<filtered>] = "a is used as a key here"
+}]])
+      end)
+
+      it('filtereds array values', function()
+        assert.equals(inspect({10,20,30}, {filter = {20}}), "{ 10, <filtered>, 30 }")
+      end)
+
+      it('filtereds metatables', function()
+        local a = {'this is a'}
+        local b = setmetatable({x = 1}, a)
+        assert.equals(inspect(b, {filter = {a}}), [[{
+  x = 1,
+  <metatable> = <filtered>
+}]])
+
+      end)
+
+      it('does not increase the table ids', function()
+        local a = {'this is a'}
+        local b = {}
+        local c = {a, b, b}
+        assert.equals(inspect(c, {filter = {a}}), "{ <filtered>, <1>{}, <table 1> }")
+      end)
+
+      it('can be a non table (gets interpreted as a table with one element)', function()
+        assert.equals(inspect({'foo', 'bar', 'baz'}, {filter = "bar"}), '{ "foo", <filtered>, "baz" }')
+      end)
+
+      it('can be a function which returns true for the elements that needs to be filtered', function()
+        local msg = inspect({1,2,3,4,5}, { filter = function(x)
+          return type(x) == 'number' and x % 2 == 0
+        end })
+
+        assert.equals(msg, '{ 1, <filtered>, 3, <filtered>, 5 }')
       end)
 
     end)
